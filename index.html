@@ -1,0 +1,732 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#0b0e14" />
+<meta name="color-scheme" content="dark" />
+<meta name="description" content="Private 3-fund portfolio tracker — SPWO / ASO / AZG with a live USD→EGP rate, allocation, rebalancing and charts." />
+<meta name="robots" content="noindex, nofollow" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%236ea8fe'/%3E%3C/svg%3E" />
+<title>Portfolio Tracker</title>
+
+<!--
+  ============================================================================
+   HOW TO UPDATE  (full details in README.md)
+  ============================================================================
+   Everything lives in the DATA object at the top of the <script> below.
+
+   • DATA.funds defines the THREE funds ONCE (name, ticker, currency, target %,
+     colour). Targets:  SPWO 50% · ASO 35% · AZG 15%  (sum = 100).
+   • totalInvested = the cash you've put in (EGP). It is split AUTOMATICALLY by
+     each fund's target %.
+   • Each month you only enter `totalInvested` + the 3 current market values:
+        AZG, ASO  -> EGP  (Azimut "Market value")
+        SPWO      -> USD  (the fund's USD value)
+   • To record a new month: copy the LAST object in DATA.months (or the
+     commented template), change `month`, set `totalInvested`, and the 3 values.
+   Then: git add -A && git commit && git push  ->  GitHub Pages redeploys.
+  ============================================================================
+-->
+
+<style>
+  :root{
+    --bg:#0b0e14; --bg-soft:#0f141d; --card:#151b26; --card-2:#1a2230;
+    --border:#232c3b; --border-soft:#1c2533;
+    --text:#e6edf3; --muted:#8b97a8; --muted-2:#5f6b7d;
+    --accent:#6ea8fe; --gold:#f5b301; --green:#34d399; --purple:#a78bfa;
+    --pos:#3fdd87; --neg:#ff6b6b;
+    --shadow:0 10px 30px rgba(0,0,0,.45); --radius:16px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    background:
+      radial-gradient(1100px 600px at 12% -10%, rgba(110,168,254,.10), transparent 55%),
+      radial-gradient(900px 500px at 100% 0%, rgba(167,139,250,.10), transparent 50%),
+      var(--bg);
+    color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Inter,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased; min-height:100vh; padding-bottom:50px;
+  }
+  .wrap{max-width:1040px;margin:0 auto;padding:18px 16px 40px}
+
+  header{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+  .logo{display:flex;align-items:center;gap:11px;font-weight:800;font-size:19px}
+  .logo .dot{width:30px;height:30px;border-radius:9px;background:linear-gradient(135deg,var(--accent),var(--purple));box-shadow:0 6px 18px rgba(110,168,254,.4)}
+  .logo small{display:block;font-size:11px;font-weight:600;color:var(--muted)}
+  .spacer{flex:1}
+  .pill{display:inline-flex;align-items:center;gap:7px;background:var(--card);border:1px solid var(--border);
+    border-radius:999px;padding:7px 12px;font-size:12.5px;color:var(--muted)}
+  .pill b{color:var(--text);font-weight:700}
+  .pill.click{cursor:pointer} .pill.click:hover{border-color:var(--accent)}
+  .dot-s{width:7px;height:7px;border-radius:50%}
+  .ok{background:var(--pos)} .stale{background:var(--gold)} .off{background:var(--neg)}
+  .seg{display:inline-flex;background:var(--card);border:1px solid var(--border);border-radius:999px;padding:3px}
+  .seg button{border:0;background:transparent;color:var(--muted);font-weight:700;font-size:13px;padding:6px 14px;border-radius:999px;cursor:pointer}
+  .seg button.on{background:linear-gradient(135deg,var(--accent),var(--purple));color:#0b0e14}
+
+  nav.tabs{display:flex;gap:6px;background:var(--card);border:1px solid var(--border);border-radius:14px;padding:6px;margin-bottom:20px;overflow:auto}
+  nav.tabs button{flex:1;min-width:90px;border:0;background:transparent;color:var(--muted);font-weight:700;font-size:14px;padding:10px 12px;border-radius:10px;cursor:pointer;white-space:nowrap}
+  nav.tabs button.on{background:var(--card-2);color:var(--text);box-shadow:inset 0 0 0 1px var(--border)}
+
+  section{display:none} section.on{display:block;animation:fade .25s ease}
+  @keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+
+  .grid{display:grid;gap:14px}
+  .g-2{grid-template-columns:repeat(2,1fr)}
+  .g-4{grid-template-columns:repeat(4,1fr)}
+  @media(max-width:1000px){.g-4{grid-template-columns:repeat(2,1fr)}}
+  @media(max-width:560px){.g-4{grid-template-columns:1fr}.g-2{grid-template-columns:1fr}}
+  .card{background:linear-gradient(180deg,var(--card),var(--bg-soft));border:1px solid var(--border);border-radius:var(--radius);padding:18px;box-shadow:var(--shadow)}
+  .card h3{margin:0 0 4px;font-size:12px;color:var(--muted);font-weight:600;letter-spacing:.4px;text-transform:uppercase}
+  .big{font-size:26px;font-weight:800;letter-spacing:.2px;margin-top:4px;line-height:1.2}
+  .alt{font-size:13px;color:var(--muted-2);margin-top:3px}
+  .pos{color:var(--pos)} .neg{color:var(--neg)}
+
+  .donut-wrap{display:flex;align-items:center;gap:20px;flex-wrap:wrap}
+  .donut{position:relative;width:170px;height:170px;flex:none}
+  .donut .center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center}
+  .donut .center small{color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.4px}
+  .donut .center b{font-size:17px}
+  .legend{flex:1;min-width:220px;display:flex;flex-direction:column;gap:11px}
+  .leg{display:flex;align-items:center;gap:10px;font-size:14px}
+  .leg .sw{width:11px;height:11px;border-radius:4px;flex:none}
+  .leg .name{font-weight:700}
+  .leg .vals{margin-left:auto;text-align:right;font-size:12.5px;color:var(--muted)}
+
+  .acard{background:linear-gradient(180deg,var(--card),var(--bg-soft));border:1px solid var(--border);border-radius:var(--radius);padding:16px;position:relative;overflow:hidden}
+  .acard:before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--bar,var(--accent))}
+  .acard .top{display:flex;align-items:center;justify-content:space-between;gap:8px}
+  .acard .tk{font-weight:800;font-size:16px} .acard .nm{font-size:12px;color:var(--muted)}
+  .acard .badge{font-size:11px;color:var(--muted);background:var(--card-2);border:1px solid var(--border);border-radius:999px;padding:3px 8px;white-space:nowrap}
+  .acard .val{font-size:22px;font-weight:800;margin-top:12px}
+  .acard .row{display:flex;justify-content:space-between;font-size:12.5px;color:var(--muted);margin-top:6px}
+  .acard .row b{color:var(--text);font-weight:600}
+
+  /* rebalance bars */
+  .rb{margin-top:14px}
+  .rb:first-child{margin-top:6px}
+  .rb-top{display:flex;justify-content:space-between;align-items:baseline;font-size:13.5px}
+  .rb-top .tk{font-weight:800}
+  .rb-act{font-weight:700;font-size:12.5px}
+  .rb-bar{position:relative;height:10px;background:var(--card-2);border:1px solid var(--border);border-radius:999px;margin-top:6px;overflow:hidden}
+  .rb-fill{position:absolute;left:0;top:0;bottom:0;border-radius:999px}
+  .rb-tick{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--text);opacity:.85}
+  .rb-sub{font-size:11.5px;color:var(--muted-2);margin-top:5px}
+
+  .table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+  .table th,.table td{padding:12px;text-align:right;font-size:13.5px;border-bottom:1px solid var(--border-soft)}
+  .table th{color:var(--muted);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.3px;background:var(--bg-soft)}
+  .table th:first-child,.table td:first-child{text-align:left}
+  .table tr:last-child td{border-bottom:0}
+  .table tfoot td{font-weight:800;background:var(--bg-soft);border-top:1px solid var(--border)}
+  .asset-name{font-weight:700} .asset-sub{font-size:11.5px;color:var(--muted)}
+
+  h2.sec{font-size:16px;margin:4px 2px 6px;font-weight:800}
+  .note{font-size:12.5px;color:var(--muted);margin:6px 2px 16px;line-height:1.6}
+  .chart-svg{width:100%;height:auto;display:block;overflow:visible}
+  .hb .tip{opacity:0;transition:opacity .12s ease}
+  .hb:hover .tip{opacity:1}
+  @media (hover:none){.hb .tip{transition:none}}
+  .empty{color:var(--muted);text-align:center;padding:30px;border:1px dashed var(--border);border-radius:14px}
+  .toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:var(--card-2);border:1px solid var(--border);color:var(--text);padding:11px 18px;border-radius:12px;font-size:14px;box-shadow:var(--shadow);opacity:0;pointer-events:none;transition:opacity .25s,transform .25s;z-index:50}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(-4px)}
+
+  /* keyboard focus + reduced motion */
+  :focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:8px}
+  .pill.refreshing{opacity:.6;pointer-events:none}
+  @media (prefers-reduced-motion: reduce){
+    section.on{animation:none}
+    .toast{transition:none}
+    *{scroll-behavior:auto}
+  }
+</style>
+</head>
+<body>
+<noscript>
+  <div style="max-width:1040px;margin:18px auto;padding:14px 16px;background:#151b26;border:1px solid #232c3b;border-radius:12px;color:#e6edf3;font-family:system-ui,-apple-system,sans-serif">
+    This portfolio tracker needs JavaScript to render your data and fetch the live USD→EGP rate. Please enable JavaScript and reload.
+  </div>
+</noscript>
+<div class="wrap">
+  <header>
+    <div class="logo"><span class="dot"></span>
+      <div>Portfolio Tracker<small id="updatedLbl"></small></div>
+    </div>
+    <div class="spacer"></div>
+    <span class="pill click" id="ratePill" role="button" tabindex="0"
+      aria-label="USD to EGP rate. Activate to refresh." title="USD → EGP. Click to refresh.">
+      <span class="dot-s off" id="rateDot"></span>$1 = <b id="rateVal">—</b> EGP</span>
+    <div class="seg" id="curSeg" role="group" aria-label="Display currency">
+      <button data-cur="EGP" class="on" aria-pressed="true">EGP</button>
+      <button data-cur="USD" aria-pressed="false">USD</button>
+    </div>
+  </header>
+
+  <nav class="tabs" id="tabs" role="tablist" aria-label="Sections">
+    <button data-tab="dash" class="on" role="tab" aria-selected="true" aria-controls="dash" id="tab-dash">Dashboard</button>
+    <button data-tab="assets" role="tab" aria-selected="false" aria-controls="assets" id="tab-assets" tabindex="-1">Funds</button>
+    <button data-tab="history" role="tab" aria-selected="false" aria-controls="history" id="tab-history" tabindex="-1">History</button>
+  </nav>
+
+  <!-- DASHBOARD -->
+  <section id="dash" class="on" role="tabpanel" aria-labelledby="tab-dash" tabindex="0">
+    <div class="grid g-4" style="margin-bottom:14px">
+      <div class="card">
+        <h3>Total invested</h3>
+        <div class="big" id="d_invested">—</div>
+        <div class="alt" id="d_invested_alt"></div>
+      </div>
+      <div class="card">
+        <h3>Current value</h3>
+        <div class="big" id="d_value">—</div>
+        <div class="alt" id="d_value_alt"></div>
+      </div>
+      <div class="card">
+        <h3>Profit / Loss</h3>
+        <div class="big" id="d_pl">—</div>
+        <div class="alt" id="d_pl_pct"></div>
+      </div>
+      <div class="card">
+        <h3>Since last month</h3>
+        <div class="big" id="d_mom">—</div>
+        <div class="alt" id="d_mom_pct"></div>
+      </div>
+    </div>
+
+    <div class="grid g-2" style="margin-bottom:14px">
+      <div class="card">
+        <h3 id="allocTitle">Allocation vs target</h3>
+        <div class="donut-wrap" style="margin-top:8px">
+          <div class="donut"><div id="donutSvg"></div>
+            <div class="center"><small>Value</small><b id="donutTotal">—</b></div>
+          </div>
+          <div class="legend" id="legend"></div>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Rebalance to target</h3>
+        <div id="rebalance" style="margin-top:6px"></div>
+      </div>
+    </div>
+
+    <div class="grid g-4" id="fundCards" style="margin-bottom:14px"></div>
+
+    <div class="card" style="margin-bottom:14px">
+      <h3>Invested vs value over time</h3>
+      <div id="growthChart"></div>
+    </div>
+
+    <div class="grid g-2">
+      <div class="card">
+        <h3>Profit / Loss by month</h3>
+        <div id="plChart"></div>
+      </div>
+      <div class="card">
+        <h3>Composition over time</h3>
+        <div id="stackChart"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FUNDS -->
+  <section id="assets" role="tabpanel" aria-labelledby="tab-assets" tabindex="0">
+    <h2 class="sec">Funds</h2>
+    <p class="note">Latest period (<b id="assetsMonth"></b>). Invested is your total cash split automatically by each fund's target. AZG / ASO are in EGP, SPWO in USD — all combined with the live rate above. To change a number, ask Claude.</p>
+    <div id="assetsTable"></div>
+  </section>
+
+  <!-- HISTORY -->
+  <section id="history" role="tabpanel" aria-labelledby="tab-history" tabindex="0">
+    <h2 class="sec">History</h2>
+    <p class="note">One row per period. Profit/Loss is current value minus the amount you invested; Δ is the change in value since the previous month.</p>
+    <div id="historyTable"></div>
+  </section>
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
+
+<script>
+"use strict";
+
+/* ============================================================================
+   DATA  —  the single source of truth.  Claude edits this when you update.
+   ----------------------------------------------------------------------------
+   • DATA.funds defines the three funds ONCE: ticker, name, currency, target %.
+     Targets must sum to 100.
+   • Each month: `totalInvested` (EGP, split automatically by target %) plus the
+     three current market `values`, keyed by fund:
+         azg, aso   -> EGP   (Azimut "Market value")
+         spwo       -> USD   (the fund's USD value)
+   ============================================================================ */
+const DATA = {
+  fallbackRate: 50,                       // USD→EGP used only if the live fetch fails
+
+  funds: [
+    { key:"spwo", ticker:"SPWO", name:"S&P World ex-US Sharia",   currency:"USD", target:50, color:"#6ea8fe" },
+    { key:"aso",  ticker:"ASO",  name:"AZ Sharia Opportunities", currency:"EGP", target:35, color:"#34d399" },
+    { key:"azg",  ticker:"AZG",  name:"AZ Gold",                 currency:"EGP", target:15, color:"#f5b301" },
+  ],
+
+  months: [
+    { month: "2026-06", totalInvested: 3600, values: { spwo: 36, aso: 1220, azg: 500 } },
+    // To add a month, copy this template, fill in the 5 numbers, and keep the
+    // newest month LAST. Add more objects below it as the months go by.
+    // {
+    //   month: "2026-07",            // "YYYY-MM"
+    //   totalInvested: 0,            // EGP — auto-split 50 / 35 / 15
+    //   values: {
+    //     spwo: 0,   // USD  — S&P World ex-US Sharia value
+    //     aso:  0,   // EGP  — AZ Sharia Opportunities "Market value"
+    //     azg:  0,   // EGP  — AZ Gold "Market value"
+    //   }
+    // },
+  ]
+};
+
+/* ---------- config derived from DATA.funds ---------- */
+const FUNDS = DATA.funds;
+const $=(s,el=document)=>el.querySelector(s);
+const $$=(s,el=document)=>[...el.querySelectorAll(s)];
+
+/* ---------- safe localStorage (never throws in private mode / disabled storage) ---------- */
+const store={
+  get(k){try{return localStorage.getItem(k);}catch(e){return null;}},
+  set(k,v){try{localStorage.setItem(k,v);}catch(e){}},
+};
+
+/* ---------- app state (UI prefs only; data comes from DATA) ---------- */
+let RATE = DATA.fallbackRate;
+let rateTs = null, rateState = "off";
+let fetching = false;
+let displayCur = (store.get("pt-cur")==="USD") ? "USD" : "EGP";
+const monthsSorted = ()=>[...DATA.months].sort((a,b)=>a.month.localeCompare(b.month));
+const latestMonth = ()=>{const ms=monthsSorted();return ms[ms.length-1]||null;};
+
+/* ---------- helpers ---------- */
+function rate(){return Number(RATE)||DATA.fallbackRate||1;}
+function conv(amt,fromCur,toCur){
+  if(fromCur===toCur)return amt;
+  if(fromCur==="USD"&&toCur==="EGP")return amt*rate();
+  if(fromCur==="EGP"&&toCur==="USD")return amt/rate();
+  return amt;
+}
+function fmt(n,cur=displayCur){
+  const num=(n||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
+  return cur==="USD" ? ("$ "+num) : num;        // EGP = plain number, USD keeps the $ symbol
+}
+function pct(n){return (n>=0?"+":"")+(n||0).toFixed(2)+"%";}
+/* compact money for chart axes: 1.2k (EGP), $3.4M (USD) */
+function fmtShort(n,cur=displayCur){
+  const sym=cur==="USD"?"$":"",a=Math.abs(n||0);
+  if(a>=1e6)return sym+(n/1e6).toFixed(1)+"M";
+  if(a>=1e3)return sym+(n/1e3).toFixed(1)+"k";
+  return sym+Math.round(n||0);
+}
+/* escape user-editable strings before injecting as HTML */
+function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));}
+
+/* invested (EGP) for a fund = totalInvested × target%   */
+function investedNative(m,f){return (m.totalInvested||0)*((f.target||0)/100);}
+function fundCalc(m,f,cur){
+  const native=((m.values||{})[f.key])||0;
+  const value=conv(native,f.currency,cur);
+  const invested=conv(investedNative(m,f),"EGP",cur);   // invested is always EGP
+  const pl=value-invested;
+  return {f,value,invested,pl,plPct:invested?pl/invested*100:0};
+}
+function monthTotals(m,cur=displayCur){
+  let invested=conv(m.totalInvested||0,"EGP",cur),value=0;const byFund={};
+  FUNDS.forEach(f=>{const c=fundCalc(m,f,cur);value+=c.value;byFund[f.key]=c.value;});
+  return {invested,value,pl:value-invested,plPct:invested?(value-invested)/invested*100:0,byFund};
+}
+
+/* "YYYY-MM" -> Date at the first of that month (local) */
+function monthDate(s){const p=String(s).split("-");return new Date(+p[0],(+p[1]||1)-1,1);}
+/* money-weighted return (XIRR) via Newton's method. flows:[{date,amount}], amount<0 = cash in */
+function xirr(flows){
+  if(flows.length<2)return null;
+  const t0=flows[0].date.getTime(),YR=365.2425*864e5;
+  const yrs=f=>(f.date.getTime()-t0)/YR;
+  const npv=r=>flows.reduce((s,f)=>s+f.amount/Math.pow(1+r,yrs(f)),0);
+  const dnpv=r=>flows.reduce((s,f)=>s-yrs(f)*f.amount/Math.pow(1+r,yrs(f)+1),0);
+  let r=0.1;
+  for(let i=0;i<80;i++){
+    const v=npv(r),d=dnpv(r);
+    if(!isFinite(v)||!isFinite(d)||d===0)break;
+    let nr=r-v/d;
+    if(!isFinite(nr))break;
+    if(nr<=-0.9999)nr=-0.9999;
+    if(Math.abs(nr-r)<1e-7){r=nr;break;}
+    r=nr;
+  }
+  return (isFinite(r)&&r>-0.9999)?r*100 : null;
+}
+/* annualized money-weighted return across all months (contributions in, current value out) */
+function annualizedIRR(cur=displayCur){
+  const ms=monthsSorted();
+  if(ms.length<2)return null;
+  const flows=[];let prevInv=0;
+  ms.forEach(m=>{
+    const inv=conv(m.totalInvested||0,"EGP",cur),contrib=inv-prevInv;prevInv=inv;
+    if(contrib!==0)flows.push({date:monthDate(m.month),amount:-contrib});
+  });
+  const last=ms[ms.length-1];
+  flows.push({date:monthDate(last.month),amount:monthTotals(last,cur).value});
+  return xirr(flows);
+}
+
+function toast(msg){const t=$("#toast");t.textContent=msg;t.classList.add("show");clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove("show"),1900);}
+
+/* ---------- charts ---------- */
+let _uid=0; const uid=p=>(p||"g")+(++_uid);   // unique <defs> ids per chart instance
+
+/* x-axis month labels — first anchored left, last anchored right, so the ends never clip */
+function xAxisLabels(labels,Xfn,h){
+  const n=labels.length;
+  return labels.map((l,i)=>{
+    const anc=n===1?"middle":i===0?"start":i===n-1?"end":"middle";
+    return `<text x="${Xfn(i).toFixed(1)}" y="${(h-7).toFixed(1)}" fill="var(--muted)" font-size="11" text-anchor="${anc}">${esc(l)}</text>`;
+  }).join("");
+}
+/* dashed horizontal gridlines + y-axis value labels */
+function yGrid(vals,Y,padL,w,padR){
+  let out="";
+  vals.forEach(val=>{const y=Y(val);
+    out+=`<line x1="${padL}" y1="${y.toFixed(1)}" x2="${(w-padR).toFixed(1)}" y2="${y.toFixed(1)}" stroke="var(--border-soft)" stroke-width="1" stroke-dasharray="4 5"/>`;
+    out+=`<text x="${(padL-8).toFixed(1)}" y="${(y+3.5).toFixed(1)}" fill="var(--muted-2)" font-size="10.5" text-anchor="end">${fmtShort(val)}</text>`;});
+  return out;
+}
+/* invisible hover bands -> a guide line + a tooltip card (pure CSS :hover, scales with the SVG) */
+function hoverLayer(labels,Xfn,padT,ih,w,rows){
+  const n=labels.length;let out="";
+  for(let i=0;i<n;i++){
+    const cx=Xfn(i),items=rows[i]||[];
+    const boxW=160,lineH=15,boxH=22+items.length*lineH;
+    let tx=cx+12; if(tx+boxW>w-4)tx=cx-12-boxW; if(tx<4)tx=4;
+    const ty=padT+4;
+    let tip=`<g class="tip" pointer-events="none">`;
+    tip+=`<line x1="${cx.toFixed(1)}" y1="${padT}" x2="${cx.toFixed(1)}" y2="${(padT+ih).toFixed(1)}" stroke="var(--accent)" stroke-width="1" stroke-dasharray="3 3" opacity="0.7"/>`;
+    tip+=`<rect x="${tx.toFixed(1)}" y="${ty}" width="${boxW}" height="${boxH}" rx="9" fill="var(--card-2)" stroke="var(--border)"/>`;
+    tip+=`<text x="${(tx+11).toFixed(1)}" y="${(ty+15).toFixed(1)}" fill="var(--text)" font-size="11" font-weight="700">${esc(labels[i])}</text>`;
+    items.forEach((ln,k)=>{const yy=ty+15+(k+1)*lineH;
+      tip+=`<circle cx="${(tx+14).toFixed(1)}" cy="${(yy-3.5).toFixed(1)}" r="3.5" fill="${ln.color}"/>`;
+      tip+=`<text x="${(tx+23).toFixed(1)}" y="${yy.toFixed(1)}" fill="var(--muted)" font-size="10.5">${esc(ln.name)}</text>`;
+      tip+=`<text x="${(tx+boxW-11).toFixed(1)}" y="${yy.toFixed(1)}" fill="var(--text)" font-size="10.5" text-anchor="end">${esc(ln.val)}</text>`;});
+    tip+=`</g>`;
+    const half=n>1?Math.abs(Xfn(1)-Xfn(0))/2:w*0.4;
+    out+=`<g class="hb">${tip}<rect x="${(cx-half).toFixed(1)}" y="${padT}" width="${(half*2).toFixed(1)}" height="${ih}" fill="#fff" fill-opacity="0" pointer-events="all"/></g>`;
+  }
+  return out;
+}
+
+/* donut: rounded slices with small gaps over a faint track ring */
+function donutSVG(segs,size=170,stroke=24){
+  const total=segs.reduce((s,x)=>s+x.value,0);
+  const r=(size-stroke)/2,c=2*Math.PI*r,cx=size/2,cy=size/2;
+  const open=`<svg class="chart-svg" viewBox="0 0 ${size} ${size}" role="img" aria-label="Allocation by fund"><title>Allocation by fund</title>`;
+  const track=`<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="var(--border-soft)" stroke-width="${stroke}"/>`;
+  if(total<=0)return `${open}${track}</svg>`;
+  const gap=segs.filter(s=>s.value>0).length>1?5:0;
+  let off=0,out="";
+  segs.forEach(s=>{if(s.value<=0)return;const len=s.value/total*c,dash=Math.max(len-gap,0.5);
+    out+=`<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${s.color}" stroke-width="${stroke}" stroke-linecap="round" stroke-dasharray="${dash.toFixed(2)} ${(c-dash).toFixed(2)}" stroke-dashoffset="${(-off).toFixed(2)}" transform="rotate(-90 ${cx} ${cy})"/>`;
+    off+=len;});
+  return `${open}${track}${out}</svg>`;
+}
+
+/* line chart: gradient area under the value line, dashed invested line, hover tooltips */
+function lineChartSVG(labels,series,w=920,h=250){
+  if(!labels.length)return `<div class="empty">No data yet</div>`;
+  const padL=52,padR=14,padT=18,padB=26;
+  const all=series.flatMap(s=>s.data);
+  let max=Math.max(...all,1),min=Math.min(...all,0);
+  if(max===min)max=min+1;
+  const iw=w-padL-padR,ih=h-padT-padB,n=labels.length;
+  const X=i=>n===1?padL+iw/2:padL+i*(iw/(n-1));
+  const Y=v=>padT+ih-((v-min)/(max-min))*ih;
+  const gid=uid("ln");
+  let out=`<defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0%" stop-color="${series[0].color}" stop-opacity="0.34"/>
+    <stop offset="100%" stop-color="${series[0].color}" stop-opacity="0"/></linearGradient></defs>`;
+  out+=yGrid([0,1,2,3].map(g=>max-(max-min)*g/3),Y,padL,w,padR);
+  series.forEach((s,si)=>{
+    if(n>1){
+      if(si===0){const area=s.data.map((v,i)=>`${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join(" ");
+        out+=`<polygon points="${X(0).toFixed(1)},${(padT+ih).toFixed(1)} ${area} ${X(n-1).toFixed(1)},${(padT+ih).toFixed(1)}" fill="url(#${gid})" stroke="none"/>`;}
+      const pts=s.data.map((v,i)=>`${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join(" ");
+      out+=`<polyline points="${pts}" fill="none" stroke="${s.color}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"${si===1?' stroke-dasharray="5 5" opacity="0.85"':''}/>`;}
+    s.data.forEach((v,i)=>{out+=`<circle cx="${X(i).toFixed(1)}" cy="${Y(v).toFixed(1)}" r="${n===1?5:3.2}" fill="${s.color}" stroke="var(--bg-soft)" stroke-width="1.5"/>`;});
+  });
+  out+=xAxisLabels(labels,X,h);
+  out+=hoverLayer(labels,X,padT,ih,w,labels.map((_,i)=>series.map(s=>({color:s.color,name:s.name,val:fmt(s.data[i])}))));
+  return `<svg class="chart-svg" viewBox="0 0 ${w} ${h}" role="img" aria-label="Invested vs current value over time"><title>Invested vs current value over time</title>${out}</svg>`;
+}
+
+/* monthly profit/loss bars — gradient fills, rounded tops, zero baseline, hover tooltips */
+function barChartSVG(labels,data,w=920,h=210){
+  if(!labels.length)return `<div class="empty">No data yet</div>`;
+  const padL=52,padR=14,padT=16,padB=26,iw=w-padL-padR,ih=h-padT-padB;
+  let max=Math.max(...data,0),min=Math.min(...data,0);
+  if(max===min){max=max+1;min=min-1;}
+  const Y=v=>padT+ih-((v-min)/(max-min))*ih,zeroY=Y(0);
+  const n=labels.length,slot=iw/n,bw=Math.min(slot*0.5,42),Xc=i=>padL+slot*i+slot/2;
+  const gp=uid("bp"),gn=uid("bn");
+  let out=`<defs>
+    <linearGradient id="${gp}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="var(--pos)" stop-opacity="0.95"/><stop offset="100%" stop-color="var(--pos)" stop-opacity="0.4"/></linearGradient>
+    <linearGradient id="${gn}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="var(--neg)" stop-opacity="0.4"/><stop offset="100%" stop-color="var(--neg)" stop-opacity="0.95"/></linearGradient></defs>`;
+  out+=yGrid([max,(max+min)/2,min],Y,padL,w,padR);
+  out+=`<line x1="${padL}" y1="${zeroY.toFixed(1)}" x2="${(w-padR).toFixed(1)}" y2="${zeroY.toFixed(1)}" stroke="var(--muted-2)" stroke-width="1.2"/>`;
+  data.forEach((v,i)=>{const cx=Xc(i),y=Y(v),top=Math.min(y,zeroY),hgt=Math.max(Math.abs(zeroY-y),1.5);
+    out+=`<rect x="${(cx-bw/2).toFixed(1)}" y="${top.toFixed(1)}" width="${bw.toFixed(1)}" height="${hgt.toFixed(1)}" rx="4" fill="url(#${v>=0?gp:gn})"/>`;});
+  out+=xAxisLabels(labels,Xc,h);
+  out+=hoverLayer(labels,Xc,padT,ih,w,labels.map((_,i)=>[{color:data[i]>=0?"var(--pos)":"var(--neg)",name:"Profit / Loss",val:fmt(data[i])}]));
+  return `<svg class="chart-svg" viewBox="0 0 ${w} ${h}" role="img" aria-label="Profit or loss by month"><title>Profit or loss by month</title>${out}</svg>`;
+}
+
+/* stacked area: each fund's value over time (single month -> one stacked bar), hover tooltips */
+function stackedAreaSVG(labels,series,w=920,h=240){
+  if(!labels.length)return `<div class="empty">No data yet</div>`;
+  const padL=52,padR=14,padT=18,padB=26,iw=w-padL-padR,ih=h-padT-padB,n=labels.length;
+  const totals=labels.map((_,i)=>series.reduce((s,sr)=>s+(sr.data[i]||0),0));
+  const max=Math.max(...totals,1);
+  const X=i=>n===1?padL+iw/2:padL+i*(iw/(n-1));
+  const Y=v=>padT+ih-(v/max)*ih;
+  let out=yGrid([0,1,2,3].map(g=>max-max*g/3),Y,padL,w,padR);
+  const below=labels.map(()=>0);
+  series.forEach(sr=>{
+    if(n===1){const v=sr.data[0]||0,y0=Y(below[0]),y1=Y(below[0]+v),cx=X(0);
+      if(v>0)out+=`<rect x="${(cx-26).toFixed(1)}" y="${y1.toFixed(1)}" width="52" height="${Math.max(y0-y1,0).toFixed(1)}" rx="3" fill="${sr.color}" fill-opacity="0.85"/>`;
+    }else{
+      const top=sr.data.map((v,i)=>[X(i),Y(below[i]+(v||0))]);
+      const bot=sr.data.map((v,i)=>[X(i),Y(below[i])]).reverse();
+      const pts=top.concat(bot).map(p=>`${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(" ");
+      out+=`<polygon points="${pts}" fill="${sr.color}" fill-opacity="0.82" stroke="${sr.color}" stroke-width="1"/>`;
+    }
+    sr.data.forEach((v,i)=>below[i]+=(v||0));
+  });
+  out+=xAxisLabels(labels,X,h);
+  out+=hoverLayer(labels,X,padT,ih,w,labels.map((_,i)=>series.map(sr=>({color:sr.color,name:sr.name,val:fmt(sr.data[i])}))));
+  return `<svg class="chart-svg" viewBox="0 0 ${w} ${h}" role="img" aria-label="Fund composition over time"><title>Fund composition over time</title>${out}</svg>`;
+}
+
+/* ---------- renders ---------- */
+function render(){renderHeader();renderDashboard();renderAssets();renderHistory();}
+
+function renderHeader(){
+  const m=latestMonth();
+  $("#updatedLbl").textContent=m?("Updated "+m.month):"No data yet";
+  $("#rateVal").textContent=rate().toLocaleString("en-US",{maximumFractionDigits:2});
+  $("#rateDot").className="dot-s "+rateState;
+  $("#ratePill").title=rateTs?("USD→EGP, updated "+new Date(rateTs).toLocaleString()+". Click to refresh."):"USD→EGP (fallback). Click to refresh.";
+  $$("#curSeg button").forEach(b=>{const on=b.dataset.cur===displayCur;b.classList.toggle("on",on);b.setAttribute("aria-pressed",on?"true":"false");});
+  $("#allocTitle").textContent="Allocation vs target ("+FUNDS.map(f=>f.target+" "+f.ticker).join(" · ")+")";
+}
+
+function renderDashboard(){
+  const m=latestMonth(),cur=displayCur,other=cur==="EGP"?"USD":"EGP";
+  if(!m){
+    $("#fundCards").innerHTML=`<div class="empty" style="grid-column:1/-1">No data yet.</div>`;
+    $("#rebalance").innerHTML=`<div class="empty">No data yet.</div>`;
+    $("#donutSvg").innerHTML=donutSVG([]);$("#legend").innerHTML="";$("#donutTotal").textContent="—";
+    $("#growthChart").innerHTML=`<div class="empty">No data yet</div>`;
+    $("#plChart").innerHTML=`<div class="empty">No data yet</div>`;
+    $("#stackChart").innerHTML=`<div class="empty">No data yet</div>`;
+    return;
+  }
+  const t=monthTotals(m,cur),t2=monthTotals(m,other);
+  $("#d_invested").textContent=fmt(t.invested,cur);
+  $("#d_invested_alt").textContent="≈ "+fmt(t2.invested,other);
+  $("#d_value").textContent=fmt(t.value,cur);
+  $("#d_value_alt").textContent="≈ "+fmt(t2.value,other);
+  const pl=$("#d_pl");pl.textContent=(t.pl>=0?"▲ ":"▼ ")+fmt(Math.abs(t.pl),cur);
+  pl.className="big "+(t.pl>=0?"pos":"neg");
+  const plp=$("#d_pl_pct");const irr=annualizedIRR(cur);
+  plp.textContent=pct(t.plPct)+(irr!=null?"  ·  "+pct(irr)+"/yr":"");
+  plp.title=irr!=null?"Total return on invested · annualized money-weighted return (XIRR)":"Total return on invested";
+  plp.className="alt "+(t.pl>=0?"pos":"neg");
+
+  // month-over-month change in value
+  const ms=monthsSorted();
+  const mom=$("#d_mom"),momp=$("#d_mom_pct");
+  if(ms.length>=2){
+    const prev=monthTotals(ms[ms.length-2],cur),d=t.value-prev.value,dp=prev.value?d/prev.value*100:0;
+    mom.textContent=(d>=0?"▲ ":"▼ ")+fmt(Math.abs(d),cur);mom.className="big "+(d>=0?"pos":"neg");
+    momp.textContent=pct(dp)+" vs "+ms[ms.length-2].month;momp.className="alt "+(d>=0?"pos":"neg");
+  }else{mom.textContent="—";mom.className="big";momp.textContent="Need 2+ months";momp.className="alt";}
+
+  $("#donutTotal").textContent=fmt(t.value,cur);
+  const segs=FUNDS.map(f=>({value:t.byFund[f.key],color:f.color}));
+  $("#donutSvg").innerHTML=donutSVG(segs);
+  $("#legend").innerHTML=FUNDS.map(f=>{
+    const v=t.byFund[f.key],share=t.value?v/t.value*100:0,drift=share-f.target;
+    const col=Math.abs(drift)<3?"var(--muted)":(drift>0?"var(--gold)":"var(--accent)");
+    return `<div class="leg"><span class="sw" style="background:${f.color}"></span>
+      <span class="name">${esc(f.ticker)}</span>
+      <span class="vals">${fmt(v,cur)}<br><span style="color:${col}">${share.toFixed(0)}% &middot; target ${f.target}%</span></span></div>`;
+  }).join("");
+
+  // rebalance: how much to add / trim to reach each target
+  $("#rebalance").innerHTML=FUNDS.map(f=>{
+    const v=t.byFund[f.key],share=t.value?v/t.value*100:0,targetVal=t.value*(f.target/100),delta=targetVal-v;
+    const onTarget=Math.abs(share-f.target)<1;
+    const act=onTarget?`<span style="color:var(--muted)">On target</span>`
+      :(delta>0?`<span class="pos">Add ${fmt(delta,cur)}</span>`:`<span class="neg">Trim ${fmt(-delta,cur)}</span>`);
+    return `<div class="rb">
+      <div class="rb-top"><span class="tk">${esc(f.ticker)}</span><span class="rb-act">${act}</span></div>
+      <div class="rb-bar"><span class="rb-fill" style="width:${Math.min(share,100).toFixed(1)}%;background:${f.color}"></span>
+        <span class="rb-tick" style="left:${Math.min(f.target,100)}%"></span></div>
+      <div class="rb-sub">${share.toFixed(1)}% now · target ${f.target}%</div>
+    </div>`;
+  }).join("");
+
+  $("#fundCards").innerHTML=FUNDS.map(f=>{
+    const c=fundCalc(m,f,cur);
+    return `<div class="acard" style="--bar:${f.color}">
+      <div class="top"><div><span class="tk">${esc(f.ticker)}</span> <span class="nm">${esc(f.name)}</span></div>
+        <span class="badge">${f.target}% · ${esc(f.currency)}</span></div>
+      <div class="val">${fmt(c.value,cur)}</div>
+      <div class="row"><span>Invested</span><b>${fmt(c.invested,cur)}</b></div>
+      <div class="row"><span>Profit / Loss</span><b class="${c.pl>=0?'pos':'neg'}">${fmt(c.pl,cur)} (${pct(c.plPct)})</b></div>
+    </div>`;
+  }).join("");
+
+  // charts over time
+  const totalsByMonth=ms.map(x=>monthTotals(x,cur));
+  const valueColor="#6ea8fe",investedColor="#5f6b7d";
+  $("#growthChart").innerHTML=lineChartSVG(
+    ms.map(x=>x.month),
+    [{name:"Current value",color:valueColor,data:totalsByMonth.map(t=>t.value)},
+     {name:"Invested",color:investedColor,data:totalsByMonth.map(t=>t.invested)}]
+  )+`<div class="note" style="margin-top:6px"><span style="color:${valueColor}">● Current value</span> &nbsp; <span style="color:var(--muted)">● Invested</span></div>`;
+
+  $("#plChart").innerHTML=barChartSVG(ms.map(x=>x.month),totalsByMonth.map(t=>t.pl));
+
+  $("#stackChart").innerHTML=stackedAreaSVG(
+    ms.map(x=>x.month),
+    FUNDS.map(f=>({name:f.ticker,color:f.color,data:totalsByMonth.map(t=>t.byFund[f.key])}))
+  )+`<div class="note" style="margin-top:6px">`+
+    FUNDS.map(f=>`<span style="color:${f.color}">● ${esc(f.ticker)}</span>`).join(" &nbsp; ")+`</div>`;
+}
+
+function renderAssets(){
+  const m=latestMonth(),cur=displayCur;
+  if(!m){$("#assetsTable").innerHTML=`<div class="empty">No data yet.</div>`;$("#assetsMonth").textContent="—";return;}
+  const t=monthTotals(m,cur);$("#assetsMonth").textContent=m.month;
+  const rows=FUNDS.map(f=>{
+    const c=fundCalc(m,f,cur),weight=t.value?c.value/t.value*100:0;
+    return `<tr>
+      <td><div class="asset-name" style="border-left:3px solid ${f.color};padding-left:8px">${esc(f.ticker)}</div>
+          <div class="asset-sub" style="padding-left:11px">${esc(f.name)} · ${esc(f.currency)}</div></td>
+      <td>${fmt(c.invested,cur)}</td>
+      <td>${fmt(c.value,cur)}</td>
+      <td class="${c.pl>=0?'pos':'neg'}">${fmt(c.pl,cur)}<br><span style="font-size:11px">${pct(c.plPct)}</span></td>
+      <td>${weight.toFixed(1)}% <span style="color:var(--muted-2)">/ ${f.target}%</span></td>
+    </tr>`;
+  }).join("");
+  $("#assetsTable").innerHTML=`<table class="table">
+    <thead><tr><th>Fund</th><th>Invested</th><th>Value</th><th>P/L</th><th>Weight / target</th></tr></thead>
+    <tbody>${rows}</tbody>
+    <tfoot><tr><td>Total</td><td>${fmt(t.invested,cur)}</td><td>${fmt(t.value,cur)}</td>
+      <td class="${t.pl>=0?'pos':'neg'}">${fmt(t.pl,cur)}</td><td>100%</td></tr></tfoot>
+  </table>`;
+}
+
+function renderHistory(){
+  const ms=monthsSorted().reverse(),cur=displayCur;   // newest first
+  if(!ms.length){$("#historyTable").innerHTML=`<div class="empty">No history yet.</div>`;return;}
+  $("#historyTable").innerHTML=`<table class="table">
+    <thead><tr><th>Month</th><th>Invested</th><th>Value</th><th>Profit/Loss</th><th>Return</th><th>Δ value</th></tr></thead>
+    <tbody>${ms.map((m,i)=>{
+      const t=monthTotals(m,cur);
+      const prev=ms[i+1]?monthTotals(ms[i+1],cur):null;   // ms is newest-first, so next index is older
+      const d=prev?t.value-prev.value:null;
+      const dCell=d==null?`<span style="color:var(--muted-2)">—</span>`
+        :`<span class="${d>=0?'pos':'neg'}">${(d>=0?"+":"−")+" "+fmt(Math.abs(d),cur)}</span>`;
+      return `<tr><td><b>${esc(m.month)}</b></td><td>${fmt(t.invested,cur)}</td><td>${fmt(t.value,cur)}</td>
+        <td class="${t.pl>=0?'pos':'neg'}">${fmt(t.pl,cur)}</td>
+        <td class="${t.pl>=0?'pos':'neg'}">${pct(t.plPct)}</td>
+        <td>${dCell}</td></tr>`;}).join("")}</tbody></table>`;
+}
+
+/* ---------- live dollar (USD → EGP) rate, with fallbacks + cache ---------- */
+const RATE_CACHE="pt-rate";
+function loadCachedRate(){
+  try{const c=JSON.parse(store.get(RATE_CACHE));
+    if(c&&c.value>0){RATE=c.value;rateTs=c.ts;
+      rateState=(Date.now()-c.ts<36*3600000)?"ok":"stale";}}catch(e){}
+}
+function saveRate(v){RATE=v;rateTs=Date.now();rateState="ok";
+  store.set(RATE_CACHE,JSON.stringify({value:v,ts:rateTs}));}
+
+/* fetch JSON with a hard timeout so a hung source can't freeze the refresh */
+async function fetchJSON(url,ms=8000){
+  const ctrl=new AbortController(),timer=setTimeout(()=>ctrl.abort(),ms);
+  try{const r=await fetch(url,{cache:"no-store",signal:ctrl.signal});return r.ok?await r.json():null;}
+  catch(e){return null;}
+  finally{clearTimeout(timer);}
+}
+
+async function fetchRate(manual){
+  if(fetching)return;                 // ignore overlapping clicks / init race
+  fetching=true;
+  const pill=$("#ratePill");pill.classList.add("refreshing");
+  const sources=[
+    {url:"https://open.er-api.com/v6/latest/USD", pick:j=>j&&j.rates&&j.rates.EGP},
+    {url:"https://latest.currency-api.pages.dev/v1/currencies/usd.json", pick:j=>j&&j.usd&&j.usd.egp},
+    {url:"https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/usd.json", pick:j=>j&&j.usd&&j.usd.egp},
+  ];
+  try{
+    for(const s of sources){
+      const j=await fetchJSON(s.url);
+      if(!j)continue;
+      const v=Number(s.pick(j));
+      if(isFinite(v)&&v>1){saveRate(v);render();if(manual)toast("Dollar rate updated: "+v.toFixed(2));return;}
+    }
+    if(!rateTs)rateState="off";
+    renderHeader();
+    if(manual)toast("Couldn't fetch — using "+(rateTs?"last saved":"fallback")+" rate");
+  }finally{
+    fetching=false;pill.classList.remove("refreshing");
+  }
+}
+
+/* ---------- events ---------- */
+const tabBtns=()=>$$("#tabs button");
+function selectTab(b){
+  if(!b)return;
+  tabBtns().forEach(x=>{const on=x===b;
+    x.classList.toggle("on",on);
+    x.setAttribute("aria-selected",on?"true":"false");
+    x.tabIndex=on?0:-1;});
+  $$("section").forEach(s=>s.classList.toggle("on",s.id===b.dataset.tab));
+}
+$("#tabs").addEventListener("click",e=>selectTab(e.target.closest("button")));
+$("#tabs").addEventListener("keydown",e=>{
+  if(!["ArrowRight","ArrowLeft","Home","End"].includes(e.key))return;
+  const btns=tabBtns(),i=btns.indexOf(document.activeElement);if(i<0)return;
+  e.preventDefault();
+  const j=e.key==="ArrowRight"?(i+1)%btns.length
+        :e.key==="ArrowLeft"?(i-1+btns.length)%btns.length
+        :e.key==="Home"?0:btns.length-1;
+  btns[j].focus();selectTab(btns[j]);
+});
+$("#curSeg").addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;
+  displayCur=b.dataset.cur;store.set("pt-cur",displayCur);render();});
+$("#ratePill").addEventListener("click",()=>fetchRate(true));
+$("#ratePill").addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();fetchRate(true);}});
+
+/* ---------- init ---------- */
+loadCachedRate();
+render();
+fetchRate(false);
+
+/* keep the rate fresh: re-fetch when the tab becomes visible again if it isn't
+   current, and on a slow 6-hour heartbeat while the tab stays open */
+document.addEventListener("visibilitychange",()=>{
+  if(document.visibilityState==="visible"&&rateState!=="ok")fetchRate(false);
+});
+setInterval(()=>{if(document.visibilityState==="visible")fetchRate(false);},6*3600*1000);
+</script>
+</body>
+</html>
